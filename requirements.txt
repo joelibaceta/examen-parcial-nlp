@@ -8,3 +8,5 @@ nltk
 gensim
 seaborn
 scikit-learn
+tensorflow
+keras
