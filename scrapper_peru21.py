@@ -28,7 +28,6 @@ class Peru21Scrapper:
         self.retry_delay = retry_delay
     
     def _is_jupyter(self):
-        """Detecta si el código se está ejecutando en Jupyter"""
         try:
             from IPython import get_ipython
             return get_ipython() is not None
@@ -36,7 +35,6 @@ class Peru21Scrapper:
             return False
     
     def _print_progress(self, message, overwrite=False):
-        """Imprime mensajes según el contexto (Jupyter o terminal)"""
         if not self.verbose:
             return
         
@@ -59,35 +57,27 @@ class Peru21Scrapper:
         return text.strip()
     
     def _retry_request(self, func, *args, **kwargs):
-        """
-        Intenta ejecutar una función con reintentos y espera exponencial
-        """
         for attempt in range(self.max_retries):
             try:
                 return func(*args, **kwargs)
             except requests.exceptions.RequestException as e:
                 if attempt < self.max_retries - 1:
                     wait_time = self.retry_delay * (2 ** attempt)
-                    self._print_progress(f"⚠️  Error de conexión (intento {attempt + 1}/{self.max_retries}). Esperando {wait_time}s...")
+                    self._print_progress(f"Error de conexión (intento {attempt + 1}/{self.max_retries}). Esperando {wait_time}s...")
                     time.sleep(wait_time)
                 else:
-                    self._print_progress(f"❌ Error después de {self.max_retries} intentos: {str(e)}")
+                    self._print_progress(f"Error después de {self.max_retries} intentos: {str(e)}")
                     raise
             except Exception as e:
-                self._print_progress(f"❌ Error inesperado: {str(e)}")
+                self._print_progress(f"Error inesperado: {str(e)}")
                 raise
         return None
     
     def _get_last_date_from_file(self, output_file):
-        """
-        Lee el archivo TSV y obtiene la fecha más reciente
-        Retorna datetime object o None si no hay datos
-        """
         if not os.path.exists(output_file):
             return None
         
         try:
-            # Leer solo la primera línea de datos (después del header)
             df = pd.read_csv(
                 output_file,
                 sep='\t',
@@ -98,28 +88,21 @@ class Peru21Scrapper:
             
             if len(df) == 0:
                 return None
-            
-            # Obtener la fecha más reciente
+        
             last_date_str = str(df['fecha'].iloc[0])
-            
-            # Parsear la fecha (puede venir en varios formatos)
+
             try:
                 last_date = datetime.strptime(last_date_str.split()[0], '%Y-%m-%d')
             except:
-                # Si falla, intentar con el formato completo
                 last_date = pd.to_datetime(last_date_str).to_pydatetime()
             
-            self._print_progress(f"📅 Última noticia encontrada: {last_date.strftime('%Y-%m-%d')}")
+            self._print_progress(f"Última noticia encontrada: {last_date.strftime('%Y-%m-%d')}")
             return last_date
         except Exception as e:
-            self._print_progress(f"⚠️  No se pudo leer la última fecha del archivo: {str(e)}")
+            self._print_progress(f"No se pudo leer la última fecha del archivo: {str(e)}")
             return None
     
     def get_news_list(self, date):
-        """
-        Obtiene todas las noticias de una fecha, incluyendo paginación
-        Con reintentos automáticos en caso de error de conexión
-        """
         all_news = []
         page = 1
         
@@ -174,7 +157,6 @@ class Peru21Scrapper:
                     fecha_element = article.find('div', class_='field--name-field-fecha-actualizacion')
                     if fecha_element:
                         fecha_text = fecha_element.get_text().strip()
-                        # Formato: "2025-11-01 12:08"
                         fecha = fecha_text.split()[0] if fecha_text else date.strftime('%Y-%m-%d')
                     else:
                         fecha = date.strftime('%Y-%m-%d')
@@ -187,7 +169,6 @@ class Peru21Scrapper:
                             'url': article_url
                         })
                 
-                # Verificar si hay página siguiente
                 next_page = soup.find('a', {'rel': 'next'})
                 if not next_page:
                     break
@@ -202,23 +183,18 @@ class Peru21Scrapper:
         return all_news
     
     def get_article_content(self, url):
-        """
-        Extrae el contenido completo de un artículo con reintentos
-        """
+
         def fetch_content():
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'lxml')
             
-            # Buscar el contenido en el campo body
             content_div = soup.find('div', class_='field--name-body')
             
             if content_div:
-                # Remover scripts, estilos y artículos embebidos
                 for unwanted in content_div(['script', 'style', 'article']):
                     unwanted.decompose()
                 
-                # Obtener todo el texto
                 content = self.clean_text(content_div.get_text())
                 return content
             
@@ -239,20 +215,9 @@ class Peru21Scrapper:
         return bool(content)
     
     def extract_historical(self, start_date=None, output_file='noticias_peru21.tsv', max_empty_attempts=10, resume=True):
-        """
-        Extrae noticias históricas desde start_date hacia atrás
-        
-        Args:
-            start_date: Fecha de inicio (si None, usa fecha actual)
-            output_file: Archivo de salida
-            max_empty_attempts: Intentos máximos consecutivos sin encontrar noticias
-            resume: Si True, intenta continuar desde la última fecha en el archivo
-        """
-        # Verificar si debemos reanudar desde un archivo existente
         if resume and os.path.exists(output_file):
             last_date = self._get_last_date_from_file(output_file)
             if last_date:
-                # Continuar desde un día antes de la última fecha
                 start_date = last_date - timedelta(days=1)
                 self._print_progress(f"🔄 Reanudando desde: {start_date.strftime('%Y-%m-%d')}")
                 mode = 'a'  # Modo append
@@ -270,7 +235,6 @@ class Peru21Scrapper:
         total_news = 0
         days_processed = 0
         
-        # Escribir header solo si es archivo nuevo
         if mode == 'w':
             with open(output_file, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file, delimiter='\t')
@@ -285,8 +249,7 @@ class Peru21Scrapper:
                 news_list = self.get_news_list(current_date)
                 
                 if news_list is None:
-                    self._print_progress(f"⚠️  Error de conexión para fecha {date_str}. Total hasta ahora: {total_news} noticias")
-                    # Esperar antes de continuar
+                    self._print_progress(f"Error de conexión para fecha {date_str}. Total hasta ahora: {total_news} noticias")
                     time.sleep(self.retry_delay)
                     continue
                 
@@ -303,27 +266,27 @@ class Peru21Scrapper:
                             if future.result():
                                 successful += 1
                                 total_news += 1
-                                self._print_progress(f"📰 Descargadas: {total_news} noticias | Fecha actual: {date_str}", overwrite=True)
+                                self._print_progress(f"Descargadas: {total_news} noticias | Fecha actual: {date_str}", overwrite=True)
                 
                 days_processed += 1
                 current_date -= timedelta(days=1)
                 
             except KeyboardInterrupt:
-                self._print_progress(f"\n⏸️  Proceso interrumpido por el usuario. Total: {total_news} noticias guardadas")
-                self._print_progress(f"💾 Puedes reanudar ejecutando el script nuevamente (automáticamente continuará desde la última fecha)")
+                self._print_progress(f"\n⏸Proceso interrumpido por el usuario. Total: {total_news} noticias guardadas")
+                self._print_progress(f"Puedes reanudar ejecutando el script nuevamente (automáticamente continuará desde la última fecha)")
                 break
             except Exception as e:
-                self._print_progress(f"❌ Error inesperado en fecha {date_str}: {str(e)}")
+                self._print_progress(f"Error inesperado en fecha {date_str}: {str(e)}")
                 time.sleep(self.retry_delay)
                 continue
         
-        self._print_progress(f"\n✅ Proceso completado: {total_news} noticias guardadas en {days_processed} días", overwrite=False)
+        self._print_progress(f"\nProceso completado: {total_news} noticias guardadas en {days_processed} días", overwrite=False)
     
     def extract(self, date, output_file='noticias_peru21.tsv'):
         news_list = self.get_news_list(date)
         
         if news_list is None or not news_list:
-            self._print_progress("⚠️  No se encontraron noticias para esta fecha")
+            self._print_progress("No se encontraron noticias para esta fecha")
             return
 
         with open(output_file, 'w', newline='', encoding='utf-8') as file:
@@ -337,26 +300,24 @@ class Peru21Scrapper:
             for future in as_completed(futures):
                 if future.result():
                     successful += 1
-                    self._print_progress(f"📰 Procesando: {successful}/{total} noticias", overwrite=True)
+                    self._print_progress(f"Procesando: {successful}/{total} noticias", overwrite=True)
         
-        self._print_progress(f"\n✅ Completado: {successful}/{total} noticias guardadas", overwrite=False)
+        self._print_progress(f"\nCompletado: {successful}/{total} noticias guardadas", overwrite=False)
 
 def main():
-    """
-    Función principal que inicia el scraper
-    """
+
     scraper = Peru21Scrapper(
-        max_workers=20,         # Hilos paralelos
-        verbose=True,           # Mostrar progreso
-        max_retries=3,          # Reintentos por request
-        retry_delay=5           # Segundos de espera base
+        max_workers=20,
+        verbose=True,
+        max_retries=3,
+        retry_delay=5
     )
     
     scraper.extract_historical(
-        start_date=None,        # None = hoy, o especifica datetime(2025, 1, 1)
+        start_date=None,
         output_file='noticias_peru21.tsv',
-        max_empty_attempts=10,  # Días consecutivos sin noticias antes de parar
-        resume=True             # True = continuar desde última fecha si existe archivo
+        max_empty_attempts=10,
+        resume=True
     )
 
 if __name__ == "__main__":
