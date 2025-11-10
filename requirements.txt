@@ -6,3 +6,5 @@ matplotlib
 demoji
 nltk
 gensim
+seaborn
+scikit-learn
